@@ -1,2 +1,2 @@
 # smb2-tools
-Port of the REL Loader for Paper Mario: The Thousand-Year Door.
+REL Loader for Super Monkey Ball 2. Ported from the REL Loader for Paper Mario: The Thousand-Year Door.
