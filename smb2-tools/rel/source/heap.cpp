@@ -8,9 +8,10 @@
 
 namespace heap {
 
-struct CustomHeap *Heap;
+struct HeapDataStruct HeapData;
 
-gc::OSAlloc::ChunkInfo *extractChunk(gc::OSAlloc::ChunkInfo *list, gc::OSAlloc::ChunkInfo *chunk)
+gc::OSAlloc::ChunkInfo *extractChunk(
+	gc::OSAlloc::ChunkInfo *list, gc::OSAlloc::ChunkInfo *chunk)
 {
 	if (chunk->next)
 	{
@@ -28,7 +29,8 @@ gc::OSAlloc::ChunkInfo *extractChunk(gc::OSAlloc::ChunkInfo *list, gc::OSAlloc::
 	}
 }
 
-gc::OSAlloc::ChunkInfo *addChunkToFront(gc::OSAlloc::ChunkInfo *list, gc::OSAlloc::ChunkInfo *chunk)
+gc::OSAlloc::ChunkInfo *addChunkToFront(
+	gc::OSAlloc::ChunkInfo *list, gc::OSAlloc::ChunkInfo *chunk)
 {
 	chunk->next = list;
 	chunk->prev = nullptr;
@@ -41,7 +43,8 @@ gc::OSAlloc::ChunkInfo *addChunkToFront(gc::OSAlloc::ChunkInfo *list, gc::OSAllo
 	return chunk;
 }
 
-gc::OSAlloc::ChunkInfo *findChunkInList(gc::OSAlloc::ChunkInfo *list, gc::OSAlloc::ChunkInfo *chunk)
+gc::OSAlloc::ChunkInfo *findChunkInList(
+	gc::OSAlloc::ChunkInfo *list, gc::OSAlloc::ChunkInfo *chunk)
 {
 	for (; list; list = list->next)
 	{
@@ -74,51 +77,39 @@ void *initMemAllocServices(uint32_t maxSize, int32_t maxHeaps)
 	}
 	
 	// Allocate memory for the heap array
-	Heap = reinterpret_cast<CustomHeap *>(allocFromArenaLow(sizeof(CustomHeap)));
+	CustomHeapStruct *tempCustomHeap = reinterpret_cast<CustomHeapStruct *>(
+		allocFromMainLoopRelocMemory(sizeof(CustomHeapStruct)));
+	
+	HeapData.CustomHeap = tempCustomHeap;
 	
 	// Allocate memory for the individual heap vars
-	Heap->HeapVars = reinterpret_cast<IndividualHeapVars *>(allocFromArenaLow(sizeof(IndividualHeapVars) * maxHeaps));
+	IndividualHeapVars *HeapVars = reinterpret_cast<IndividualHeapVars *>(
+		allocFromMainLoopRelocMemory(sizeof(IndividualHeapVars) * maxHeaps));
+	
+	tempCustomHeap->HeapVars = HeapVars;
 	
 	// Initialize all of the heap handles to -1
 	for (int32_t i = 0; i < maxHeaps; i++)
 	{
-		Heap->HeapVars[i].HeapHandle = -1;
+		HeapVars[i].HeapHandle = -1;
 	}
 	
-	// Round the size up to the nearest 32 bytes
-	const uint32_t Alignment = 32;
+	// Round the size up to the nearest multiple of 0x20 bytes
+	const uint32_t Alignment = 0x20;
 	maxSize = (maxSize + Alignment - 1) & ~(Alignment - 1);
 	
-	void *LeftoverRelLoaderMem = reinterpret_cast<void *>(*reinterpret_cast<uint32_t *>(0x8000452C));
-	void *ArenaLow;
-	
 	// Allocate the desired memory
-	if (LeftoverRelLoaderMem)
-	{
-		const uint32_t LeftoverRelLoaderMemSize = 0xA220;
-		if (maxSize <= LeftoverRelLoaderMemSize)
-		{
-			// Use the leftover memory from the rel loader
-			ArenaLow = clearAndFlushMemory(LeftoverRelLoaderMem, LeftoverRelLoaderMemSize);
-		}
-		else
-		{
-			ArenaLow = allocFromArenaLow(maxSize);
-		}
-	}
-	else
-	{
-		ArenaLow = allocFromArenaLow(maxSize);
-	}
+	void *ArenaStart = allocFromMainLoopRelocMemory(maxSize);
 	
 	// Set up the arena end
-	void *ArenaEnd = reinterpret_cast<void *>(reinterpret_cast<uint32_t>(ArenaLow) + maxSize);
+	void *ArenaEnd = reinterpret_cast<void *>(
+		reinterpret_cast<uint32_t>(ArenaStart) + maxSize);
 	
 	// Init the memory allocation services
-	void *HeapArrayStart = initAlloc(ArenaLow, ArenaEnd, maxHeaps);
+	void *HeapArrayStart = initAlloc(ArenaStart, ArenaEnd, maxHeaps);
 	
 	// Store the start of the heap array
-	Heap->HeapArrayStart = HeapArrayStart;
+	tempCustomHeap->HeapArrayStart = HeapArrayStart;
 	return HeapArrayStart;
 }
 
@@ -140,17 +131,19 @@ void *initAlloc(void *arenaStart, void *arenaEnd, int32_t maxHeaps)
 	}
 	
 	// Make sure the maximum number of heaps is valid
-	if (static_cast<uint32_t>(maxHeaps) > ((ArenaEndRaw - ArenaStartRaw) / sizeof(gc::OSAlloc::HeapInfo)))
+	if (static_cast<uint32_t>(maxHeaps) > 
+		((ArenaEndRaw - ArenaStartRaw) / sizeof(gc::OSAlloc::HeapInfo)))
 	{
 		return nullptr;
 	}
 	
 	// Put the heap array at the start of the arena
-	Heap->HeapArray = reinterpret_cast<gc::OSAlloc::HeapInfo *>(arenaStart);
-	Heap->MaxHeaps = maxHeaps;
+	CustomHeapStruct *tempCustomHeap = HeapData.CustomHeap;
+	tempCustomHeap->HeapArray = reinterpret_cast<gc::OSAlloc::HeapInfo *>(arenaStart);
+	tempCustomHeap->MaxHeaps = maxHeaps;
 	
 	// Initialize all members of the heap array
-	gc::OSAlloc::HeapInfo *HeapArray = Heap->HeapArray;
+	gc::OSAlloc::HeapInfo *HeapArray = tempCustomHeap->HeapArray;
 	for (int32_t i = 0; i < maxHeaps; i++)
 	{
 		gc::OSAlloc::HeapInfo *Info = &HeapArray[i];
@@ -159,22 +152,25 @@ void *initAlloc(void *arenaStart, void *arenaEnd, int32_t maxHeaps)
 		Info->firstUsed = nullptr;
 	}
 	
-	const uint32_t Alignment = 32;
+	const uint32_t Alignment = 0x20;
 	uint32_t ArraySize = sizeof(gc::OSAlloc::HeapInfo) * maxHeaps;
 	
-	// Adjust arenaStart to be at the nearest reasonable location; gets rounded up to the nearest 32 bytes
+	// Adjust arenaStart to be at the nearest reasonable location
+	// Gets rounded up to the nearest multiple of 0x20 bytes
 	ArenaStartRaw = ((ArenaStartRaw + ArraySize) + Alignment - 1) & ~(Alignment - 1);
 	
-	// Round the end down to the nearest 32 bytes
+	// Round the end down to the nearest multiple of 0x20 bytes
 	ArenaEndRaw &= ~(Alignment - 1);
 	
 	arenaStart = reinterpret_cast<void *>(ArenaStartRaw);
 	arenaEnd = reinterpret_cast<void *>(ArenaEndRaw);
-	Heap->ArenaStart = arenaStart;
-	Heap->ArenaEnd = arenaEnd;
+	tempCustomHeap->ArenaStart = arenaStart;
+	tempCustomHeap->ArenaEnd = arenaEnd;
 	
 	// Make sure at least one entry can fit in the heap array
-	uint32_t MinSize = ((sizeof(gc::OSAlloc::ChunkInfo) + Alignment - 1) & ~(Alignment - 1)) + Alignment;
+	uint32_t MinSize = ((sizeof(gc::OSAlloc::ChunkInfo) + 
+		Alignment - 1) & ~(Alignment - 1)) + Alignment;
+	
 	if (MinSize > (ArenaEndRaw - ArenaStartRaw))
 	{
 		return nullptr;
@@ -183,39 +179,46 @@ void *initAlloc(void *arenaStart, void *arenaEnd, int32_t maxHeaps)
 	return arenaStart;
 }
 
-int32_t addHeap(uint32_t size, bool removeHeaderSize)
+int32_t addHeap(uint32_t size, bool removeHeapInfoSize)
 {
-	const uint32_t Alignment = 32;
-	if (removeHeaderSize)
-	{
-		// Remove the header size and then round up to the nearest 32 bytes
-		size -= (sizeof(gc::OSAlloc::ChunkInfo) + Alignment - 1) & ~(Alignment - 1);
-	}
+	CustomHeapStruct *tempCustomHeap = HeapData.CustomHeap;
+	const uint32_t Alignment = 0x20;
 	
-	// Round the size up to the nearest 32 bytes
-	size = (size + Alignment - 1) & ~(Alignment - 1);
+	if (removeHeapInfoSize)
+	{
+		// Remove the total heap info size and then round down to the nearest multiple of 0x20 bytes
+		uint32_t ArraySize = sizeof(gc::OSAlloc::HeapInfo) * tempCustomHeap->MaxHeaps;
+		size = (size - ArraySize) & ~(Alignment - 1);
+	}
+	else
+	{
+		// Round the size up to the nearest multiple of 0x20 bytes
+		size = (size + Alignment - 1) & ~(Alignment - 1);
+	}
 	
 	void *Start;
 	void *End;
 	int32_t CurrentHeap = -1;
+	IndividualHeapVars *HeapVars = tempCustomHeap->HeapVars;
 	
 	// Get the starting address
-	if (!Heap->HeapVars[0].EndAddress)
+	if (!HeapVars[0].EndAddress)
 	{
 		// Use the start of the heap array as the address
-		Start = Heap->HeapArrayStart;
+		Start = tempCustomHeap->HeapArrayStart;
 		CurrentHeap = 0;
 	}
 	else
 	{
-		// Use the ending address of the previous heap
-		int32_t Size = Heap->MaxHeaps;
-		for (int32_t i = (Size - 1); i >= 0; i--)
+		// Find the next empty heap
+		int32_t Size = tempCustomHeap->MaxHeaps;
+		for (int32_t i = 1; i < Size; i++)
 		{
-			Start = Heap->HeapVars[i].EndAddress;
-			if (Start)
+			if (!HeapVars[i].EndAddress)
 			{
-				CurrentHeap = i + 1;
+				// Use the ending address of the previous heap
+				Start = HeapVars[i - 1].EndAddress;
+				CurrentHeap = i;
 				break;
 			}
 		}
@@ -231,7 +234,7 @@ int32_t addHeap(uint32_t size, bool removeHeaderSize)
 	End = reinterpret_cast<void *>(reinterpret_cast<uint32_t>(Start) + size);
 	
 	// Set the end address for the current heap
-	Heap->HeapVars[CurrentHeap].EndAddress = End;
+	HeapVars[CurrentHeap].EndAddress = End;
 	
 	// Create the heap
 	int32_t Handle = createHeap(Start, End);
@@ -243,14 +246,16 @@ int32_t addHeap(uint32_t size, bool removeHeaderSize)
 	}
 	
 	// Add the new handle to the heap handle array
-	Heap->HeapVars[CurrentHeap].HeapHandle = Handle;
+	HeapVars[CurrentHeap].HeapHandle = Handle;
 	return Handle;
 }
 
 int32_t createHeap(void *start, void *end)
 {
+	CustomHeapStruct *tempCustomHeap = HeapData.CustomHeap;
+	gc::OSAlloc::HeapInfo *HeapArray = tempCustomHeap->HeapArray;
+	
 	// Make sure the heap array has been created
-	gc::OSAlloc::HeapInfo *HeapArray = Heap->HeapArray;
 	if (!HeapArray)
 	{
 		return -1;
@@ -265,8 +270,9 @@ int32_t createHeap(void *start, void *end)
 		return -1;
 	}
 	
-	// Round the start up to the nearest 32 bytes, and the end down to the nearest 32 bytes
-	const uint32_t Alignment = 32;
+	// Round the start up to the nearest multiple of 0x20 bytes,
+	// Round the end down to the nearest multiple of 0x20 bytes
+	const uint32_t Alignment = 0x20;
 	StartRaw = (StartRaw + Alignment - 1) & ~(Alignment - 1);
 	EndRaw &= ~(Alignment - 1);
 	
@@ -277,21 +283,23 @@ int32_t createHeap(void *start, void *end)
 	}
 	
 	// Make sure the start and end are a subset of the arena start and arena end
-	if ((reinterpret_cast<uint32_t>(Heap->ArenaStart) > StartRaw) || 
-		EndRaw > reinterpret_cast<uint32_t>(Heap->ArenaEnd))
+	if ((reinterpret_cast<uint32_t>(tempCustomHeap->ArenaStart) > StartRaw) || 
+		EndRaw > reinterpret_cast<uint32_t>(tempCustomHeap->ArenaEnd))
 	{
 		return -1;
 	}
 	
 	// Make sure at least one entry can fit in the heap
-	uint32_t MinSize = ((sizeof(gc::OSAlloc::ChunkInfo) + Alignment - 1) & ~(Alignment - 1)) + Alignment;
+	uint32_t MinSize = ((sizeof(gc::OSAlloc::ChunkInfo) + 
+		Alignment - 1) & ~(Alignment - 1)) + Alignment;
+	
 	if (MinSize > (EndRaw - StartRaw))
 	{
 		return -1;
 	}
 	
 	// Get the next free spot
-	int32_t MaxHeaps = Heap->MaxHeaps;
+	int32_t MaxHeaps = tempCustomHeap->MaxHeaps;
 	for (int32_t i = 0; i < MaxHeaps; i++)
 	{
 		gc::OSAlloc::HeapInfo *Info = &HeapArray[i];
@@ -317,8 +325,10 @@ int32_t createHeap(void *start, void *end)
 
 bool destroyHeap(int32_t heapHandle)
 {
+	CustomHeapStruct *tempCustomHeap = HeapData.CustomHeap;
+	gc::OSAlloc::HeapInfo *HeapArray = tempCustomHeap->HeapArray;
+	
 	// Make sure the heap array has been created
-	gc::OSAlloc::HeapInfo *HeapArray = Heap->HeapArray;
 	if (!HeapArray)
 	{
 		return false;
@@ -331,7 +341,7 @@ bool destroyHeap(int32_t heapHandle)
 	}
 	
 	// Make sure the heap handle does not exceed the total number of heaps
-	if (heapHandle > Heap->MaxHeaps)
+	if (heapHandle > tempCustomHeap->MaxHeaps)
 	{
 		return false;
 	}
@@ -350,25 +360,33 @@ bool destroyHeap(int32_t heapHandle)
 	return true;
 }
 
-void *allocFromArenaLow(uint32_t size)
+void *allocFromMainLoopRelocMemory(uint32_t size)
 {
-	// Round the size up to the nearest 32 bytes
-	const uint32_t Alignment = 32;
+	// Round the size up to the nearest multiple of 0x20 bytes
+	const uint32_t Alignment = 0x20;
 	size = (size + Alignment - 1) & ~(Alignment - 1);
 	
-	return clearAndFlushMemory(gc::OSArena::OSAllocFromArenaLo(size, Alignment), size);
+	// Take the memory from the main game loop's relocation data
+	uint32_t AddressRaw = reinterpret_cast<uint32_t>(
+		HeapData.RelLoaderAddresses.RelocationDataArena);
+	
+	// Increment the main game loop's relocation data by the size
+	HeapData.RelLoaderAddresses.RelocationDataArena = reinterpret_cast<void *>(AddressRaw + size);
+	
+	return clearAndFlushMemory(reinterpret_cast<void *>(AddressRaw), size);
 }
 
 void *memAlloc(int32_t heap, uint32_t size)
 {
 	// Make sure the heap does not exceed the total number of heaps
-	if (heap >= Heap->MaxHeaps)
+	CustomHeapStruct *tempCustomHeap = HeapData.CustomHeap;
+	if (heap >= tempCustomHeap->MaxHeaps)
 	{
 		return nullptr;
 	}
 	
 	// Allocate the desired memory
-	void *AllocatedMemory = allocFromHeap(Heap->HeapVars[heap].HeapHandle, size);
+	void *AllocatedMemory = allocFromHeap(tempCustomHeap->HeapVars[heap].HeapHandle, size);
 	
 	if (AllocatedMemory)
 	{
@@ -382,8 +400,10 @@ void *memAlloc(int32_t heap, uint32_t size)
 
 void *allocFromHeap(int32_t heapHandle, uint32_t size)
 {
+	CustomHeapStruct *tempCustomHeap = HeapData.CustomHeap;
+	gc::OSAlloc::HeapInfo *HeapArray = tempCustomHeap->HeapArray;
+	
 	// Make sure the heap array has been created
-	gc::OSAlloc::HeapInfo *HeapArray = Heap->HeapArray;
 	if (!HeapArray)
 	{
 		return nullptr;
@@ -402,7 +422,7 @@ void *allocFromHeap(int32_t heapHandle, uint32_t size)
 	}
 	
 	// Make sure the heap handle does not exceed the total number of heaps
-	if (heapHandle > Heap->MaxHeaps)
+	if (heapHandle > tempCustomHeap->MaxHeaps)
 	{
 		return nullptr;
 	}
@@ -414,7 +434,7 @@ void *allocFromHeap(int32_t heapHandle, uint32_t size)
 	}
 	
 	// Enlarge size to the smallest possible chunk size
-	const uint32_t Alignment = 32;
+	const uint32_t Alignment = 0x20;
 	size += (sizeof(gc::OSAlloc::ChunkInfo) + Alignment - 1) & ~(Alignment - 1);
 	size = (size + Alignment - 1) & ~(Alignment - 1);
 	
@@ -443,7 +463,9 @@ void *allocFromHeap(int32_t heapHandle, uint32_t size)
 	}
 	
 	int32_t LeftoverSize = tempChunk->size - static_cast<int32_t>(size);
-	int32_t MinSize = ((sizeof(gc::OSAlloc::ChunkInfo) + Alignment - 1) & ~(Alignment - 1)) + Alignment;
+	
+	int32_t MinSize = ((sizeof(gc::OSAlloc::ChunkInfo) + 
+		Alignment - 1) & ~(Alignment - 1)) + Alignment;
 	
 	// Check if the current chunk can be split into two pieces
 	if (LeftoverSize < MinSize)
@@ -497,30 +519,35 @@ void *allocFromHeap(int32_t heapHandle, uint32_t size)
 bool memFree(int32_t heap, void *ptr)
 {
 	// Make sure the heap does not exceed the total number of heaps
-	if (heap >= Heap->MaxHeaps)
+	CustomHeapStruct *tempCustomHeap = HeapData.CustomHeap;
+	if (heap >= tempCustomHeap->MaxHeaps)
 	{
 		return false;
 	}
 	
-	return freeToHeap(Heap->HeapVars[heap].HeapHandle, ptr);
+	return freeToHeap(tempCustomHeap->HeapVars[heap].HeapHandle, ptr);
 }
 
 bool freeToHeap(int32_t heapHandle, void *ptr)
 {
+	CustomHeapStruct *tempCustomHeap = HeapData.CustomHeap;
+	gc::OSAlloc::HeapInfo *HeapArray = tempCustomHeap->HeapArray;
+	
 	// Make sure the heap array has been created
-	gc::OSAlloc::HeapInfo *HeapArray = Heap->HeapArray;
 	if (!HeapArray)
 	{
 		return false;
 	}
 	
-	const uint32_t Alignment = 32;
+	const uint32_t Alignment = 0x20;
 	uint32_t PtrRaw = reinterpret_cast<uint32_t>(ptr);
-	uint32_t HeaderSize = (sizeof(gc::OSAlloc::ChunkInfo) + Alignment - 1) & ~(Alignment - 1);
+	
+	uint32_t HeaderSize = (sizeof(gc::OSAlloc::ChunkInfo) + 
+		Alignment - 1) & ~(Alignment - 1);
 	
 	// Make sure ptr is in the range of the arenas
-	if (((reinterpret_cast<uint32_t>(Heap->ArenaStart) + HeaderSize) > PtrRaw) || 
-		(PtrRaw >= reinterpret_cast<uint32_t>(Heap->ArenaEnd)))
+	if (((reinterpret_cast<uint32_t>(tempCustomHeap->ArenaStart) + HeaderSize) > PtrRaw) || 
+		(PtrRaw >= reinterpret_cast<uint32_t>(tempCustomHeap->ArenaEnd)))
 	{
 		return false;
 	}

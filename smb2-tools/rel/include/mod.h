@@ -14,6 +14,7 @@ public:
 
 private:
 	bool performRelPatches(gc::OSModule::OSModuleInfo *, void *);
+	void performAssemblyPatches();
 	
 private:
 	bool (*mPFN_OSLink_trampoline)(gc::OSModule::OSModuleInfo *, void *) = nullptr;

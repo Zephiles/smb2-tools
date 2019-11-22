@@ -22,24 +22,9 @@ bool Mod::performRelPatches(gc::OSModule::OSModuleInfo *newModule, void *bss)
 		return Result;
 	}
 	
-	uint32_t NewModuleRaw = reinterpret_cast<uint32_t>(newModule);
+	// uint32_t NewModuleRaw = reinterpret_cast<uint32_t>(newModule);
 	switch (newModule->id)
 	{
-		case 0x1: // mkb2.main_game.rel
-		{
-#ifdef SMB2_US
-			uint32_t Offset = 0x600;
-#elif defined SMB2_JP
-			uint32_t Offset = 0x604;
-#elif defined SMB2_EU
-			uint32_t Offset = 0x604;
-#endif
-			// Inject the run function at the start of the main game loop
-			patch::writeBranchBL(reinterpret_cast<void *>(NewModuleRaw + Offset), 
-				reinterpret_cast<void *>(StartMainLoopAssembly));
-			
-			return Result;
-		}
 		default:
 		{
 			return Result;
@@ -47,10 +32,37 @@ bool Mod::performRelPatches(gc::OSModule::OSModuleInfo *newModule, void *bss)
 	}
 }
 
+void Mod::performAssemblyPatches()
+{
+#ifdef SMB2_US
+		uint32_t Offset = 0x600;
+#elif defined SMB2_JP
+		uint32_t Offset = 0x604;
+#elif defined SMB2_EU
+		uint32_t Offset = 0x604;
+#endif
+	// Inject the run function at the start of the main game loop
+	patch::writeBranchBL(reinterpret_cast<void *>(reinterpret_cast<uint32_t>(
+		heap::HeapData.RelLoaderAddresses.MainLoopRelLocation) + Offset), 
+		reinterpret_cast<void *>(StartMainLoopAssembly));
+	
+	/* Remove OSReport call ``PERF : event is still open for CPU!`` 
+	since it reports every frame, and thus clutters the console */
+#ifdef SMB2_US
+	// Only needs to be applied to the US version
+	uint32_t *Address = reinterpret_cast<uint32_t *>(0x80033E9C);
+	*Address = 0x60000000; // nop
+	
+	// Clear the cache for the address
+	patch::clear_DC_IC_Cache(Address, sizeof(uint32_t));
+#endif
+}
+
 void checkHeaps()
 {
-	int32_t TotalHeaps = heap::Heap->MaxHeaps;
-	gc::OSAlloc::HeapInfo *HeapArray = heap::Heap->HeapArray;
+	heap::CustomHeapStruct *tempCustomHeap = heap::HeapData.CustomHeap;
+	gc::OSAlloc::HeapInfo *HeapArray = tempCustomHeap->HeapArray;
+	int32_t TotalHeaps = tempCustomHeap->MaxHeaps;
 	
 	for (int32_t i = 0; i < TotalHeaps; i++)
 	{
