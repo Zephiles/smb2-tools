@@ -43,7 +43,7 @@ void Mod::performAssemblyPatches()
 #endif
 	// Inject the run function at the start of the main game loop
 	patch::writeBranchBL(reinterpret_cast<void *>(reinterpret_cast<uint32_t>(
-		heap::HeapData.RelLoaderAddresses.MainLoopRelLocation) + Offset), 
+		heap::HeapData.MainLoopRelLocation) + Offset), 
 		reinterpret_cast<void *>(StartMainLoopAssembly));
 	
 	/* Remove OSReport call ``PERF : event is still open for CPU!`` 
@@ -58,66 +58,58 @@ void Mod::performAssemblyPatches()
 #endif
 }
 
-void checkHeaps()
+void checkHeap()
 {
-	heap::CustomHeapStruct *tempCustomHeap = heap::HeapData.CustomHeap;
-	gc::OSAlloc::HeapInfo *HeapArray = tempCustomHeap->HeapArray;
-	int32_t TotalHeaps = tempCustomHeap->MaxHeaps;
+	gc::OSAlloc::HeapInfo *tempHeap = heap::HeapData.CustomHeap->HeapArray;
+	bool valid = true;
 	
-	for (int32_t i = 0; i < TotalHeaps; i++)
+	gc::OSAlloc::ChunkInfo *currentChunk = nullptr;
+	gc::OSAlloc::ChunkInfo *prevChunk = nullptr;
+	for (currentChunk = tempHeap->firstUsed; currentChunk; currentChunk = currentChunk->next)
 	{
-		const gc::OSAlloc::HeapInfo &tempHeap = HeapArray[i];
-		bool valid = true;
-		
-		gc::OSAlloc::ChunkInfo *currentChunk = nullptr;
-		gc::OSAlloc::ChunkInfo *prevChunk = nullptr;
-		for (currentChunk = tempHeap.firstUsed; currentChunk; currentChunk = currentChunk->next)
+		// Check pointer sanity
+		auto checkIfPointerIsValid = [](void *ptr)
 		{
-			// Check pointer sanity
-			auto checkIfPointerIsValid = [](void *ptr)
-			{
-				uint32_t ptrRaw = reinterpret_cast<uint32_t>(ptr);
-				return (ptrRaw >= 0x80000000) && (ptrRaw < 0x81800000);
-			};
-			
-			if (!checkIfPointerIsValid(currentChunk))
-			{
-				valid = false;
-				break;
-			}
-			
-			// Sanity check size
-			if (currentChunk->size >= 0x1800000)
-			{
-				valid = false;
-				break;
-			}
-
-			// Check linked list integrity
-			if (prevChunk != currentChunk->prev)
-			{
-				valid = false;
-				break;
-			}
-
-			prevChunk = currentChunk;
+			uint32_t ptrRaw = reinterpret_cast<uint32_t>(ptr);
+			return (ptrRaw >= 0x80000000) && (ptrRaw < 0x81800000);
+		};
+		
+		if (!checkIfPointerIsValid(currentChunk))
+		{
+			valid = false;
+			break;
 		}
 		
-		if (!valid)
+		// Sanity check size
+		if (currentChunk->size >= 0x1800000)
 		{
-			// Print the error message to the console
-			gc::OSError::OSReport(
-			"Heap %" PRId32 " corrupt at 0x%08" PRIX32 "\n", 
-			i, 
-			reinterpret_cast<uint32_t>(currentChunk));
+			valid = false;
+			break;
 		}
+
+		// Check linked list integrity
+		if (prevChunk != currentChunk->prev)
+		{
+			valid = false;
+			break;
+		}
+
+		prevChunk = currentChunk;
+	}
+	
+	if (!valid)
+	{
+		// Print the error message to the console
+		gc::OSError::OSReport(
+		"Heap corrupt at 0x%08" PRIx32 "\n", 
+		reinterpret_cast<uint32_t>(currentChunk));
 	}
 }
 
 void run()
 {
-	// Make sure there are no issues with the heap(s)
-	checkHeaps();
+	// Make sure there are no issues with the heap
+	checkHeap();
 }
 
 }

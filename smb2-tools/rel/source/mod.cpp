@@ -10,10 +10,8 @@ Mod *gMod = nullptr;
 
 void main()
 {
-	// Create one heap with a size of 0x15000 bytes
-	const uint32_t SizeToAllocate = 0x15000;
-	heap::initMemAllocServices(SizeToAllocate, 1);
-	heap::addHeap(SizeToAllocate, true);
+	// Create the heap to use with a size of 0x15000 bytes
+	heap::makeHeap(0x15000);
 	
 	Mod *mod = new Mod();
 	mod->init();
