@@ -35,11 +35,11 @@ bool Mod::performRelPatches(gc::OSModule::OSModuleInfo *newModule, void *bss)
 void Mod::performAssemblyPatches()
 {
 #ifdef SMB2_US
-		uint32_t Offset = 0x600;
+	uint32_t Offset = 0x600;
 #elif defined SMB2_JP
-		uint32_t Offset = 0x604;
+	uint32_t Offset = 0x604;
 #elif defined SMB2_EU
-		uint32_t Offset = 0x604;
+	uint32_t Offset = 0x604;
 #endif
 	// Inject the run function at the start of the main game loop
 	patch::writeBranchBL(reinterpret_cast<void *>(reinterpret_cast<uint32_t>(
@@ -114,10 +114,30 @@ void checkHeaps()
 	}
 }
 
+void enableDebugMode()
+{
+#ifdef SMB2_US
+	uint32_t Offset = 0x6FB90;
+#elif defined SMB2_JP
+	uint32_t Offset = 0x29898;
+#elif defined SMB2_EU
+	uint32_t Offset = 0x29938;
+#endif
+	
+	/* Should check to see if this value ever gets cleared. 
+		If not, then the value should only be set once */
+	*reinterpret_cast<uint32_t *>(reinterpret_cast<uint32_t>(
+		heap::HeapData.MainLoopBSSLocation) + Offset) |= 
+		((1 << 0) | (1 << 1)); // Turn on the 0 and 1 bits
+}
+
 void run()
 {
 	// Make sure there are no issues with the heap(s)
 	checkHeaps();
+	
+	// Make sure debug mode is enabled
+	enableDebugMode();
 }
 
 }
