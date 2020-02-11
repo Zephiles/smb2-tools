@@ -149,10 +149,10 @@ lwz r27,0x34(r22)
 b closeCard
 
 allocateFromMainLoopRelocMemory:
-stwu %sp,-0x10(%sp)
-mflr %r0
-stw %r0,0x14(%sp)
-stmw %r30,0x8(%sp)
+stwu sp,-0x10(sp)
+mflr r0
+stw r0,0x14(sp)
+stmw r30,0x8(sp)
 
 addi r4,r3,31
 rlwinm r4,r4,0,0,26 # Round the size up to the nearest multiple of 0x20 bytes
@@ -178,17 +178,17 @@ mr r4,r31 # Size
 bctrl
 mr r3,r30 # Dest
 
-lmw %r30,0x8(%sp)
-lwz %r0,0x14(%sp)
-mtlr %r0
-addi %sp,%sp,0x10
+lmw r30,0x8(sp)
+lwz r0,0x14(sp)
+mtlr r0
+addi sp,sp,0x10
 blr
 
 allocateFromArenaLow:
-stwu %sp,-0x10(%sp)
-mflr %r0
-stw %r0,0x14(%sp)
-stmw %r30,0x8(%sp)
+stwu sp,-0x10(sp)
+mflr r0
+stw r0,0x14(sp)
+stmw r30,0x8(sp)
 
 ori r4,r28,0xd628 # OSAllocFromArenaLow
 mtctr r4
