@@ -8,42 +8,42 @@ namespace heap {
 
 struct RelLoaderGlobalAddresses
 {
-	void *RelocationDataArena;
-	void *RelocationDataStart; // Also the custom REL module start
-	void *CustomRelBSSAreaStart;
-	void *MainLoopRelLocation;
-	void *MainLoopBSSLocation;
-	
-	RelLoaderGlobalAddresses()
-	{
-		RelocationDataArena = *reinterpret_cast<uint32_t **>(0x8000452C);
-		RelocationDataStart = *reinterpret_cast<uint32_t **>(0x80004534);
-		CustomRelBSSAreaStart = *reinterpret_cast<uint32_t **>(0x80004530);
-		MainLoopRelLocation = *reinterpret_cast<uint32_t **>(0x80004524);
-		MainLoopBSSLocation = *reinterpret_cast<uint32_t **>(0x80004528);
-	}
+    void *RelocationDataArena;
+    void *RelocationDataStart; // Also the custom REL module start
+    void *CustomRelBSSAreaStart;
+    void *MainLoopRelLocation;
+    void *MainLoopBSSLocation;
+    
+    RelLoaderGlobalAddresses()
+    {
+        RelocationDataArena = *reinterpret_cast<uint32_t **>(0x8000452C);
+        RelocationDataStart = *reinterpret_cast<uint32_t **>(0x80004534);
+        CustomRelBSSAreaStart = *reinterpret_cast<uint32_t **>(0x80004530);
+        MainLoopRelLocation = *reinterpret_cast<uint32_t **>(0x80004524);
+        MainLoopBSSLocation = *reinterpret_cast<uint32_t **>(0x80004528);
+    }
 };
 
 struct IndividualHeapVars
 {
-	int32_t HeapHandle;
-	void *EndAddress;
+    int32_t HeapHandle;
+    void *EndAddress;
 };
 
 struct CustomHeapStruct
 {
-	gc::OSAlloc::HeapInfo *HeapArray;
-	IndividualHeapVars *HeapVars;
-	int32_t MaxHeaps;
-	void *ArenaStart;
-	void *ArenaEnd;
-	void *HeapArrayStart;
+    gc::OSAlloc::HeapInfo *HeapArray;
+    IndividualHeapVars *HeapVars;
+    int32_t MaxHeaps;
+    void *ArenaStart;
+    void *ArenaEnd;
+    void *HeapArrayStart;
 };
 
 struct HeapDataStruct
 {
-	CustomHeapStruct *CustomHeap;
-	RelLoaderGlobalAddresses RelLoaderAddresses;
+    CustomHeapStruct *CustomHeap;
+    RelLoaderGlobalAddresses RelLoaderAddresses;
 };
 
 gc::OSAlloc::ChunkInfo *extractChunk(gc::OSAlloc::ChunkInfo *list, gc::OSAlloc::ChunkInfo *chunk);
