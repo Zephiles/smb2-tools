@@ -8,28 +8,28 @@ namespace heap {
 
 struct CustomHeapStruct
 {
-	gc::OSAlloc::HeapInfo *HeapArray;
-	void *ArenaStart;
-	void *ArenaEnd;
+    gc::OSAlloc::HeapInfo *HeapArray;
+    void *ArenaStart;
+    void *ArenaEnd;
 };
 
 struct HeapDataStruct
 {
-	CustomHeapStruct *CustomHeap;
-	void *RelocationDataArena;
-	void *RelocationDataStart; // Also the custom REL module start
-	void *CustomRelBSSAreaStart;
-	void *MainLoopRelLocation;
-	void *MainLoopBSSLocation;
-	
-	HeapDataStruct()
-	{
-		RelocationDataArena = *reinterpret_cast<uint32_t **>(0x8000452C);
-		RelocationDataStart = *reinterpret_cast<uint32_t **>(0x80004534);
-		CustomRelBSSAreaStart = *reinterpret_cast<uint32_t **>(0x80004530);
-		MainLoopRelLocation = *reinterpret_cast<uint32_t **>(0x80004524);
-		MainLoopBSSLocation = *reinterpret_cast<uint32_t **>(0x80004528);
-	}
+    CustomHeapStruct *CustomHeap;
+    void *RelocationDataArena;
+    void *RelocationDataStart; // Also the custom REL module start
+    void *CustomRelBSSAreaStart;
+    void *MainLoopRelLocation;
+    void *MainLoopBSSLocation;
+    
+    HeapDataStruct()
+    {
+        RelocationDataArena = *reinterpret_cast<uint32_t **>(0x8000452C);
+        RelocationDataStart = *reinterpret_cast<uint32_t **>(0x80004534);
+        CustomRelBSSAreaStart = *reinterpret_cast<uint32_t **>(0x80004530);
+        MainLoopRelLocation = *reinterpret_cast<uint32_t **>(0x80004524);
+        MainLoopBSSLocation = *reinterpret_cast<uint32_t **>(0x80004528);
+    }
 };
 
 gc::OSAlloc::ChunkInfo *extractChunk(gc::OSAlloc::ChunkInfo *list, gc::OSAlloc::ChunkInfo *chunk);
